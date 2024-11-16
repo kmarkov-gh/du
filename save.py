@@ -33,7 +33,9 @@ def get_root_dev(path):
     return os.stat(path).st_dev
 
 def initialize_database(db_path):
-    """Создает таблицу в базе данных для хранения информации о размерах (выполняется один раз)."""
+    """
+    Создает таблицу в базе данных для хранения информации о размерах (выполняется один раз).
+    """
     with sqlite3.connect(db_path) as conn:
         cursor = conn.cursor()
         cursor.execute('''
@@ -48,15 +50,20 @@ def initialize_database(db_path):
         conn.commit()
 
 def get_size(path):
-    """Возвращает размер директории. Работает только в пределах одной файловой системы."""
+    """
+    Возвращает размер директории. Работает только в пределах одной файловой системы.
+    """
     total_size = 0
-    for dirpath, _, _ in os.walk(path):
-        if os.stat(dirpath).st_dev != root_dev:
-            continue
-        for filename in os.listdir(dirpath):
-            file_path = os.path.join(dirpath, filename)
-            if os.path.isfile(file_path):
-                total_size += os.path.getsize(file_path)
+    with os.scandir(path) as it:
+        for entry in it:
+            try:
+                if entry.is_file(follow_symlinks=False):
+                    total_size += entry.stat(follow_symlinks=False).st_size
+                elif entry.is_dir(follow_symlinks=False):
+                    total_size += get_size(entry.path)
+            except (PermissionError, FileNotFoundError):
+                # Игнорируем недоступные директории и файлы
+                continue
     return total_size
 
 def get_last_recorded_size(cursor, dirpath):

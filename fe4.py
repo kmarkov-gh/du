@@ -59,7 +59,9 @@ def get_directory_size_data(directory):
 
 # Функция для форматирования размера в человекочитаемый вид
 def format_size(size):
-    """Форматирует размер в человекочитаемый формат (байты, КБ, МБ, ГБ)."""
+    """
+    Форматирует размер в человекочитаемый формат (байты, КБ, МБ, ГБ).
+    """
     for unit in ['B', 'K', 'M', 'G', 'T']:
         if size < 1024:
             return f"{size:.1f}{unit}"
@@ -78,15 +80,15 @@ def get_last_snapshot_size(directory):
         WHERE path LIKE ?
         GROUP BY path
     """, (f"{directory}%",))
-    
+
     data = cursor.fetchall()
     conn.close()
 
-    # Возвращаем словарь {путь: размер}
+    # Возвращаем словарь {path: size}
     return {row[0]: row[2] for row in data}
 
 # Функция для отображения диаграммы с символом #
-def draw_bar_chart(stdscr, size_data, start_row, max_height, max_width):
+def draw_bar_chart(stdscr, size_data, start_row, max_height, max_width, bar_offset, selected_bar):
     if not size_data:
         return
 
@@ -95,19 +97,28 @@ def draw_bar_chart(stdscr, size_data, start_row, max_height, max_width):
     if max_size == 0:
         return  # Нечего отображать, все размеры равны нулю
 
-    num_bars = min(len(size_data), max_width - 2)
+    num_bars = min(len(size_data) - bar_offset, max_width - 2)
     bar_width = max(1, max_width // num_bars)
 
-    for i, (_, size) in enumerate(size_data[:num_bars]):
+    for i, (timestamp, size) in enumerate(size_data[bar_offset:bar_offset + num_bars]):
         bar_height = int((size / max_size) * max_height)
         bar_x = i * bar_width + 1
+        color = curses.A_REVERSE if i == selected_bar else curses.A_NORMAL
 
         for j in range(bar_height):
-            stdscr.addstr(start_row - j, bar_x, '#')
+            stdscr.addstr(start_row - j, bar_x, '#', color)
+        
+        # Отображаем дату, время и размер под выделенным столбцом
+        if i == selected_bar:
+            date_time_str = datetime.datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
+            size_str = format_size(size)
+            stdscr.addstr(start_row + 1, 0, f"Date/Time: {date_time_str}, Size: {size_str}")
 
 # Функция для отображения списка директорий с использованием ncurses
 def display_directories(stdscr, target_directory):
     previous_directory = None
+    bar_offset = 0
+    selected_bar = 0
 
     while True:
         # Получаем список директорий и их размеры
@@ -183,10 +194,12 @@ def display_directories(stdscr, target_directory):
                 stdscr, size_data,
                 start_row=height - 5,
                 max_height=height - half_height - 6,
-                max_width=width
+                max_width=width,
+                bar_offset=bar_offset,
+                selected_bar=selected_bar
             )
 
-            stdscr.addstr(height - 1, 0, "Press 'q' to quit, Enter to select")
+            stdscr.addstr(height - 1, 0, "Press 'q' to quit, Enter to select, Left/Right to scroll chart")
             stdscr.refresh()
 
             key = stdscr.getch()
@@ -200,6 +213,16 @@ def display_directories(stdscr, target_directory):
             elif key == curses.KEY_DOWN:
                 if selected_idx < len(directories_with_sizes) - 1:
                     selected_idx += 1
+            elif key == curses.KEY_LEFT:
+                if bar_offset > 0:
+                    bar_offset -= 1
+                if selected_bar > 0:
+                    selected_bar -= 1
+            elif key == curses.KEY_RIGHT:
+                if bar_offset < len(size_data) - (width // max(1, width // min(len(size_data), max(width - 2, 1)))):
+                    bar_offset += 1
+                if selected_bar < min(len(size_data) - bar_offset, width // max(1, width // min(len(size_data), max(width - 2, 1)))) - 1:
+                    selected_bar += 1
             elif key == curses.KEY_ENTER or key == 10 or key == 13:
                 selected_dir = directories_with_sizes[selected_idx][0]
                 if selected_dir == "..":
