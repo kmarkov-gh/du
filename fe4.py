@@ -130,6 +130,12 @@ def display_directories(stdscr, target_directory):
         stdscr.clear()
         height, width = stdscr.getmaxyx()
 
+        # Определяем фиксированную позицию для размеров
+        # Вычисляем максимальную длину имени поддиректорий и задаём позицию для отображения размеров
+        max_dir_name_length = max(len(d) for d, _ in directories_with_sizes) + 2
+        size_column_start = max_dir_name_length + 2
+
+
         half_height = height // 2
         maxlines = half_height - 2 - 1
         selected_idx = 0
@@ -151,11 +157,16 @@ def display_directories(stdscr, target_directory):
             for idx, (dir_name, size) in enumerate(directories_with_sizes[scroll_start:scroll_end + 1]):
                 stdscr.addstr(2 + idx, 0, " " * width)
                 global_idx = scroll_start + idx
-                display_name = f"{dir_name} ({format_size(size)})"
-                if global_idx == selected_idx:
-                    stdscr.addstr(2 + idx, 0, f"> {display_name}", curses.A_REVERSE)
-                else:
-                    stdscr.addstr(2 + idx, 0, f"  {display_name}")
+                display_name = f"{dir_name}"
+                size_display = f"{format_size(size)}"
+                # Отображение имени и размера с выравниванием
+                stdscr.addstr(2 + idx, 0, f"> {display_name}" if global_idx == selected_idx else f"  {display_name}")
+                stdscr.addstr(
+                    2 + idx,
+                    size_column_start,
+                    size_display,
+                    curses.A_REVERSE if global_idx == selected_idx else 0
+                )
 
             stdscr.addstr(half_height - 1, 0, "-" * width)
 
@@ -168,9 +179,6 @@ def display_directories(stdscr, target_directory):
             for row in range(half_height, height - 2):
                 stdscr.addstr(row, 0, " " * width)
 
-            # Отображаем отладочный вывод и диаграмму
-            debug_info = f"Debug size_data: {size_data}"
-            stdscr.addstr(height - 3, 0, debug_info[:width])
             draw_bar_chart(
                 stdscr, size_data,
                 start_row=height - 5,
