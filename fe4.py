@@ -329,6 +329,14 @@ def display_directories(stdscr, target_directory):
 
             # Обработка ввода от пользователя
             key = stdscr.getch()
+            if key == curses.KEY_HOME or key == 126:  # Добавляем обработку клавиши Home (код 126)
+                selected_idx = 0
+                scroll_start = 0
+                scroll_end = min(maxlines - 1, len(directories_with_sizes) - 1)
+            if key == curses.KEY_HOME:
+                selected_idx = 0
+                scroll_start = 0
+                scroll_end = min(maxlines - 1, len(directories_with_sizes) - 1)
             if key == ord('q'):
                 return
             if key == curses.KEY_LEFT:
@@ -391,6 +399,14 @@ def display_directories(stdscr, target_directory):
 
 # Основная функция для запуска программы
 # Использует ncurses для управления пользовательским интерфейсом
+import signal
+
+def signal_handler(sig, frame):
+    print("Program terminated gracefully.")
+    exit(0)
+
+signal.signal(signal.SIGINT, signal_handler)
+
 def main():
     target_directory = args.directory
 
