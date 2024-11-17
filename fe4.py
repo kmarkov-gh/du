@@ -3,7 +3,13 @@ import curses
 import argparse
 import sqlite3
 import datetime
+import logging
 
+# Настраиваем логирование
+logging.basicConfig(filename='sql_queries.log', level=logging.INFO, format='%(asctime)s - %(message)s')
+
+# Создаем кеш для хранения размеров директорий
+size_cache = {}
 
 # Функция для загрузки конфигурации из файла
 def load_config(config_file='config.txt'):
@@ -24,7 +30,6 @@ def load_config(config_file='config.txt'):
         print(f"Error reading configuration file: {e}")
     return config
 
-
 # Загружаем конфигурацию и получаем путь к базе данных
 config = load_config()
 DB_PATH = config.get("DB_PATH")
@@ -43,18 +48,30 @@ def parse_arguments():
 
 # Функция для получения данных по размеру директории
 def get_directory_size_data(directory):
+    if directory in size_cache:
+        logging.info(f"Cache hit for directory data: {directory}")
+        return size_cache[directory]
+
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
-    # Убираем ограничение по времени и извлекаем все данные
-    cursor.execute("""
+    # Логирование SQL-запроса
+    query = """
         SELECT timestamp, size FROM directory_snapshot
         WHERE path = ?
         ORDER BY timestamp
-    """, (directory,))
+    """
+    logging.info(f"{query.strip()}-- parameters: '{directory}'")
+    cursor.execute(query, (directory,))
 
     data = cursor.fetchall()
     conn.close()
+
+    # Сохраняем данные в кеш
+    if data:
+        size_cache[directory] = list(data)
+    else:
+        size_cache[directory] = []
     return data
 
 # Функция для форматирования размера в человекочитаемый вид
@@ -70,22 +87,37 @@ def format_size(size):
 
 # Функция для получения последнего размера директории
 def get_last_snapshot_size(directory):
+    # Проверяем кеш на наличие уже вычисленных размеров для директории
+    cache_key = f"snapshot_{directory}"
+    if cache_key in size_cache:
+        logging.info(f"Cache hit for directory snapshot with key: {cache_key}")
+        return size_cache[cache_key]
+    
+        logging.info(f"Cache hit for directory: {directory}")
+        return size_cache[cache_key]
+
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
-    # Получаем последний снапшот размера для каждой директории
-    cursor.execute("""
+    # Логирование SQL-запроса
+    query = """
         SELECT path, MAX(timestamp) AS latest_time, size
         FROM directory_snapshot
         WHERE path LIKE ?
         GROUP BY path
-    """, (f"{directory}%",))
+    """
+    logging.info(f"{query.strip()} -- parameters: '{directory}%' ")
+    cursor.execute(query, (f"{directory}%",))
 
     data = cursor.fetchall()
     conn.close()
 
-    # Возвращаем словарь {path: size}
-    return {row[0]: row[2] for row in data}
+    # Сохраняем данные в кеш
+    if data:
+        size_cache[cache_key] = {row[0]: row[2] for row in data if len(row) >= 3}
+    else:
+        size_cache[cache_key] = {}
+    return size_cache[cache_key]
 
 # Функция для отображения диаграммы с символом #
 def draw_bar_chart(stdscr, size_data, start_row, max_height, max_width, bar_offset, selected_bar):
@@ -199,10 +231,11 @@ def display_directories(stdscr, target_directory):
                 selected_bar=selected_bar
             )
 
-            stdscr.addstr(height - 1, 0, "Press 'q' to quit, Enter to select, Left/Right to scroll chart")
+            stdscr.addstr(height - 1, 0, "Press 'q' to quit, Enter to select, Left/Right to scroll chart, Home to go to first directory")
             stdscr.refresh()
 
             key = stdscr.getch()
+            stdscr.refresh()
             if key == ord('q'):
                 return
             elif key == curses.KEY_UP:
@@ -223,6 +256,11 @@ def display_directories(stdscr, target_directory):
                     bar_offset += 1
                 if selected_bar < min(len(size_data) - bar_offset, width // max(1, width // min(len(size_data), max(width - 2, 1)))) - 1:
                     selected_bar += 1
+            elif key in [curses.KEY_HOME, 262, ord('g'), 126]:  # Добавлена дополнительная поддержка системного кода 262 для клавиши Home
+                selected_idx = 0
+                scroll_start = 0
+                scroll_end = scroll_start + maxlines - 1
+                selected_bar = 0
             elif key == curses.KEY_ENTER or key == 10 or key == 13:
                 selected_dir = directories_with_sizes[selected_idx][0]
                 if selected_dir == "..":
