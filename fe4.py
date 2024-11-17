@@ -104,6 +104,8 @@ def format_size(size):
     """
     for unit in ['B', 'K', 'M', 'G', 'T']:
         if size < 1024:
+            if unit == 'B':
+                return f"{int(size)}{unit}"
             return f"{size:.1f}{unit}"
         size /= 1024
     return f"{size:.1f}P"  # На случай, если размер слишком велик
@@ -178,11 +180,13 @@ size_format_cyclers = {}  # хранение текущего состояния
 # Функция для получения следующей единицы измерения размера
 # Используется для переключения между различными единицами измерения
 def get_next_unit(size, units, current_index):
-    for i in range(len(units)):
-        next_index = (current_index + i + 1) % len(units)
-        next_unit = units[next_index]
+    # Всегда переключаем на следующую единицу измерения, даже если размер равен 0 или меньше 0.01
+    next_index = (current_index + 1)% len(units)
+    logging.info(f"Next index: {next_index}")
+    for i in range(next_index, len(units)):
+        next_unit = units[i]
         if next_unit == 'HR' or format_size_in_unit(size, next_unit) >= 0.01:
-            return next_index, next_unit
+            return i, next_unit
     return 0, 'HR'
 
 # Функция для обновления списка единиц измерения размера
@@ -211,11 +215,12 @@ def format_size_in_unit(size, unit):
 def format_size_by_unit(size, unit):
     if unit == 'HR':
         return format_size(size)
+    elif unit == 'B':
+        return f"{int(size)} {unit}"
     else:
         value = format_size_in_unit(size, unit)
-        if value < 0.01:
-            return "< 0.01 {unit}"
         return f"{value:.2f} {unit}"
+    
 
 # Основная функция для отображения списка директорий с использованием ncurses
 # Пользователь может взаимодействовать с интерфейсом, используя клавиши вверх/вниз, влево/вправо, 'b' для смены единицы измерения, Enter для выбора директории
@@ -352,6 +357,9 @@ def display_directories(stdscr, target_directory):
                 selected_bar = len(size_data) - 1 if size_data else 0
             elif key == ord('b'):
                 logging.info(f"'b' key pressed to change size unit for selected directory.")
+                # Обновляем индекс единицы измерения, переключаясь на следующую
+                size_format_cyclers[target_directory]['index'] = (size_format_cyclers[target_directory]['index'] ) % len(size_format_cyclers[target_directory]['units'])
+                current_unit = size_format_cyclers[target_directory]['units'][size_format_cyclers[target_directory]['index']]
                 # Обновляем единицу измерения для текущей директории
                 size_format_cyclers[target_directory]['index'], current_unit = get_next_unit(
                     directories_with_sizes[selected_idx][1],
